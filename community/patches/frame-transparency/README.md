@@ -59,6 +59,8 @@ Then add alpha transparency and blur radius parameters in your config:
 
 Both features are opt-in via frame parameters (alpha-background and ns-background-blur).
 
+Blur only works on Cocoa frames and is applied dynamically.
+
 ## Example Config
 
 Here is an example of how I use this feature. It works using emacs clients attached to a daemon, or by launching the graphical process normally. This also addresses a common issue where the frame initializes with transparency but no blur effect until a redisplay occurs.
