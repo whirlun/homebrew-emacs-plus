@@ -1,0 +1,306 @@
+diff --git a/lisp/faces.el b/lisp/faces.el
+index cd23358c350..8310328d033 100644
+--- a/lisp/faces.el
++++ b/lisp/faces.el
+@@ -1266,6 +1266,7 @@ face-attribute-name-alist
+     (:foreground . "foreground color")
+     (:background . "background color")
+     (:stipple . "background stipple")
++    (:glow . "neon glow effect")
+     (:inherit . "inheritance"))
+   "An alist of descriptive names for face attributes.
+ Each element has the form (ATTRIBUTE-NAME . DESCRIPTION) where
+diff --git a/src/dispextern.h b/src/dispextern.h
+index e3a78ba79d3..f49979858e8 100644
+--- a/src/dispextern.h
++++ b/src/dispextern.h
+@@ -1672,6 +1672,7 @@ #define FONT_TOO_HIGH(ft)						\
+   LFACE_FONTSET_INDEX,
+   LFACE_DISTANT_FOREGROUND_INDEX,
+   LFACE_EXTEND_INDEX,
++  LFACE_GLOW_INDEX,
+   LFACE_VECTOR_SIZE
+ };
+ 
+@@ -1839,6 +1840,19 @@ #define FONT_TOO_HIGH(ft)						\
+   bool_bf synth_ital : 1;
+ #endif
+ 
++  /* If non-zero, draw a glow (shadow) behind text in this face.  */
++  bool_bf glow_p : 1;
++  bool_bf glow_color_defaulted_p : 1;
++
++  /* Glow color (used as shadow color for neon text effect).  */
++  unsigned long glow_color;
++
++  /* Glow radius (blur spread in pixels).  0 means no glow.  */
++  int glow_radius;
++
++  /* Glow intensity (number of additive blending passes).  */
++  int glow_intensity;
++
+   /* The hash value of this face.  */
+   uintptr_t hash;
+ 
+diff --git a/src/macfont.m b/src/macfont.m
+index 4ff720c5dd2..48d824d8582 100644
+--- a/src/macfont.m
++++ b/src/macfont.m
+@@ -3058,6 +3058,52 @@ So we use CTFontDescriptorCreateMatchingFontDescriptor (no
+       CGContextSetTextMatrix (context, atfm);
+       CGContextSetTextPosition (context, text_position.x, text_position.y);
+ 
++      /* Apply glow (neon shadow) effect if face has it enabled.
++	 use additive blending (PlusLighter) and draw the text
++	 in the glow color with a CG shadow multiple times.  Additive
++	 blending accumulates light so repeated passes intensify the
++	 halo without making letters appear thicker.  Then draw the
++	 final sharp text on top with normal blending.  */
++      if (face->glow_p && face->glow_radius > 0 && s->hl != DRAW_CURSOR)
++	{
++	  CGColorRef glow_cgcolor = get_cgcolor (face->glow_color);
++	  CGSize offset = CGSizeMake (0, 0);
++
++	  CGContextSetBlendMode (context, kCGBlendModePlusLighter);
++
++	  for (int pass = 0; pass < face->glow_intensity; pass++)
++	    {
++	      CGContextSaveGState (context);
++	      CGContextSetShadowWithColor (context, offset,
++					   (CGFloat) face->glow_radius,
++					   glow_cgcolor);
++	      CGContextSetFillColorWithColor (context, glow_cgcolor);
++	      CGContextSetTextPosition (context, text_position.x,
++				        text_position.y);
++#if MAC_OS_X_VERSION_MAX_ALLOWED >= 1070
++	      if (macfont_info->color_bitmap_p
++#if MAC_OS_X_VERSION_MIN_REQUIRED < 1070
++		  && CTFontDrawGlyphs != NULL
++#endif
++		  )
++		{ if (len > 0) CTFontDrawGlyphs (macfont_info->macfont, glyphs,
++						  positions, len, context); }
++	      else
++#endif
++		{
++		  CGContextSetFont (context, macfont_info->cgfont);
++		  CGContextSetFontSize (context, font_size);
++		  CGContextShowGlyphsAtPositions (context, glyphs, positions, len);
++		}
++	      CGContextRestoreGState (context);
++	    }
++
++	  CGColorRelease (glow_cgcolor);
++	  CGContextSetBlendMode (context, kCGBlendModeNormal);
++	}
++
++      /* Final pass: draw the sharp text on top (no shadow).  */
++      CGContextSetTextPosition (context, text_position.x, text_position.y);
+ #if MAC_OS_X_VERSION_MAX_ALLOWED >= 1070
+       if (macfont_info->color_bitmap_p
+ #if MAC_OS_X_VERSION_MIN_REQUIRED < 1070
+diff --git a/src/xfaces.c b/src/xfaces.c
+index 6a30f348ee9..5fd8005ced6 100644
+--- a/src/xfaces.c
++++ b/src/xfaces.c
+@@ -1803,6 +1803,7 @@ #define LFACE_FONTSET(LFACE)	    AREF (LFACE, LFACE_FONTSET_INDEX)
+ #define LFACE_EXTEND(LFACE)	    AREF (LFACE, LFACE_EXTEND_INDEX)
+ #define LFACE_DISTANT_FOREGROUND(LFACE) \
+   AREF (LFACE, LFACE_DISTANT_FOREGROUND_INDEX)
++#define LFACE_GLOW(LFACE)	    AREF (LFACE, LFACE_GLOW_INDEX)
+ 
+ /* True if LFACE is a Lisp face.  A Lisp face is a vector of size
+    LFACE_VECTOR_SIZE which has the symbol `face' in slot 0.  */
+@@ -1897,6 +1898,12 @@ check_lface_attrs (Lisp_Object attrs[LFACE_VECTOR_SIZE])
+ 	   || NILP (attrs[LFACE_INHERIT_INDEX])
+ 	   || SYMBOLP (attrs[LFACE_INHERIT_INDEX])
+ 	   || CONSP (attrs[LFACE_INHERIT_INDEX]));
++  eassert (UNSPECIFIEDP (attrs[LFACE_GLOW_INDEX])
++	   || IGNORE_DEFFACE_P (attrs[LFACE_GLOW_INDEX])
++	   || RESET_P (attrs[LFACE_GLOW_INDEX])
++	   || NILP (attrs[LFACE_GLOW_INDEX])
++	   || FIXNUMP (attrs[LFACE_GLOW_INDEX])
++	   || CONSP (attrs[LFACE_GLOW_INDEX]));
+ #ifdef HAVE_WINDOW_SYSTEM
+   eassert (UNSPECIFIEDP (attrs[LFACE_STIPPLE_INDEX])
+ 	   || IGNORE_DEFFACE_P (attrs[LFACE_STIPPLE_INDEX])
+@@ -2159,7 +2166,8 @@ lface_fully_specified_p (Lisp_Object attrs[LFACE_VECTOR_SIZE])
+ 
+   for (i = 1; i < LFACE_VECTOR_SIZE; ++i)
+     if (i != LFACE_FONT_INDEX && i != LFACE_INHERIT_INDEX
+-        && i != LFACE_DISTANT_FOREGROUND_INDEX)
++        && i != LFACE_DISTANT_FOREGROUND_INDEX
++	&& i != LFACE_GLOW_INDEX)
+       if ((UNSPECIFIEDP (attrs[i]) || IGNORE_DEFFACE_P (attrs[i])))
+ 	break;
+ 
+@@ -3488,6 +3496,57 @@ DEFUN ("internal-set-lisp-face-attribute", Finternal_set_lisp_face_attribute,
+       old_value = LFACE_EXTEND (lface);
+       ASET (lface, LFACE_EXTEND_INDEX, value);
+     }
++  else if (EQ (attr, QCglow))
++    {
++      bool valid_p;
++
++      if (UNSPECIFIEDP (value) || IGNORE_DEFFACE_P (value) || RESET_P (value))
++	valid_p = true;
++      else if (NILP (value))
++	valid_p = true;
++      else if (FIXNUMP (value))
++	valid_p = XFIXNUM (value) > 0;
++      else if (CONSP (value))
++	{
++	  Lisp_Object tem = value;
++	  valid_p = true;
++	  while (CONSP (tem))
++	    {
++	      Lisp_Object k = XCAR (tem);
++	      tem = XCDR (tem);
++	      if (!CONSP (tem))
++		{ valid_p = false; break; }
++	      Lisp_Object v = XCAR (tem);
++	      tem = XCDR (tem);
++
++	      if (EQ (k, QCcolor))
++		{
++		  if (!STRINGP (v) || SCHARS (v) == 0)
++		    { valid_p = false; break; }
++		}
++	      else if (EQ (k, QCradius))
++		{
++		  if (!FIXNUMP (v) || XFIXNUM (v) <= 0)
++		    { valid_p = false; break; }
++		}
++	      else if (EQ (k, QCintensity))
++		{
++		  if (!FIXNUMP (v) || XFIXNUM (v) <= 0)
++		    { valid_p = false; break; }
++		}
++	      else
++		{ valid_p = false; break; }
++	    }
++	}
++      else
++	valid_p = false;
++
++      if (!valid_p)
++	signal_error ("Invalid face glow", value);
++
++      old_value = LFACE_GLOW (lface);
++      ASET (lface, LFACE_GLOW_INDEX, value);
++    }
+   else if (EQ (attr, QCforeground))
+     {
+       HANDLE_INVALID_NIL_VALUE (QCforeground, face);
+@@ -4209,6 +4268,8 @@ DEFUN ("internal-get-lisp-face-attribute", Finternal_get_lisp_face_attribute,
+     value = LFACE_INHERIT (lface);
+   else if (EQ (keyword, QCextend))
+     value = LFACE_EXTEND (lface);
++  else if (EQ (keyword, QCglow))
++    value = LFACE_GLOW (lface);
+   else if (EQ (keyword, QCfont))
+     value = LFACE_FONT (lface);
+   else if (EQ (keyword, QCfontset))
+@@ -6386,6 +6447,53 @@ realize_gui_face (struct face_cache *cache, Lisp_Object attrs[LFACE_VECTOR_SIZE]
+ 	}
+     }
+ 
++  /* Glow (neon text shadow effect).  */
++  {
++    Lisp_Object glow = attrs[LFACE_GLOW_INDEX];
++    if (FIXNUMP (glow))
++      {
++	face->glow_p = true;
++	face->glow_radius = XFIXNUM (glow);
++	face->glow_intensity = 3;
++	face->glow_color = face->foreground;
++	face->glow_color_defaulted_p = true;
++      }
++    else if (CONSP (glow))
++      {
++	face->glow_p = true;
++	face->glow_radius = 6;
++	face->glow_intensity = 3;
++	face->glow_color = face->foreground;
++	face->glow_color_defaulted_p = true;
++
++	Lisp_Object tem = glow;
++	while (CONSP (tem))
++	  {
++	    Lisp_Object k = XCAR (tem);
++	    tem = XCDR (tem);
++	    if (!CONSP (tem)) break;
++	    Lisp_Object v = XCAR (tem);
++	    tem = XCDR (tem);
++
++	    if (EQ (k, QCradius))
++	      face->glow_radius = XFIXNUM (v);
++	    else if (EQ (k, QCintensity))
++	      face->glow_intensity = XFIXNUM (v);
++	    else if (EQ (k, QCcolor))
++	      {
++		face->glow_color = load_color (f, face, v, LFACE_GLOW_INDEX);
++		face->glow_color_defaulted_p = false;
++	      }
++	  }
++      }
++    else
++      {
++	face->glow_p = false;
++	face->glow_radius = 0;
++	face->glow_intensity = 0;
++      }
++  }
++
+   /* Text underline, overline, strike-through.  */
+ 
+   underline = attrs[LFACE_UNDERLINE_INDEX];
+@@ -7347,6 +7455,7 @@ init_xfaces (void)
+   face_attr_sym[LFACE_FONTSET_INDEX] = QCfontset;
+   face_attr_sym[LFACE_DISTANT_FOREGROUND_INDEX] = QCdistant_foreground;
+   face_attr_sym[LFACE_EXTEND_INDEX] = QCextend;
++  face_attr_sym[LFACE_GLOW_INDEX] = QCglow;
+ }
+ 
+ void
+@@ -7387,9 +7496,12 @@ syms_of_xfaces (void)
+   DEFSYM (QCbox, ":box");
+   DEFSYM (QCinherit, ":inherit");
+   DEFSYM (QCextend, ":extend");
++  DEFSYM (QCglow, ":glow");
+ 
+   /* Symbols used for Lisp face attribute values.  */
+   DEFSYM (QCcolor, ":color");
++  DEFSYM (QCradius, ":radius");
++  DEFSYM (QCintensity, ":intensity");
+   DEFSYM (QCline_width, ":line-width");
+   DEFSYM (QCstyle, ":style");
+   DEFSYM (QCposition, ":position");
+diff --git a/src/nsterm.m b/src/nsterm.m
+--- a/src/nsterm.m
++++ b/src/nsterm.m
+@@ -4538,6 +4538,24 @@
+ 	  || (s->next && s->next->hl != s->hl && s->right_overhang)))
+     r[0] = NSIntersectionRect (r[0], NSMakeRect (s->x, s->y, s->width, s->height));
+ 
++  /* Expand clip rect to accommodate glow shadow that extends beyond
++     the glyph bounding box.  Clamp to the window's text area so glow
++     does not bleed into the header/tab bar above.  */
++  if (s->face && s->face->glow_p && s->face->glow_radius > 0)
++    {
++      CGFloat expand = (CGFloat) s->face->glow_radius * 2;
++      int text_top = WINDOW_HEADER_LINE_HEIGHT (s->w)
++	+ WINDOW_TAB_LINE_HEIGHT (s->w);
++      NSRect text_area = NSMakeRect (
++	WINDOW_BOX_LEFT_EDGE_X (s->w),
++	WINDOW_TOP_EDGE_Y (s->w) + text_top,
++	WINDOW_PIXEL_WIDTH (s->w),
++	WINDOW_BOX_TEXT_HEIGHT (s->w));
++      for (int i = 0; i < n; i++)
++	r[i] = NSIntersectionRect (NSInsetRect (r[i], -expand, -expand),
++				   text_area);
++    }
++
+   ns_focus (s->f, r, n);
+ 
+   switch (s->first_glyph->type)

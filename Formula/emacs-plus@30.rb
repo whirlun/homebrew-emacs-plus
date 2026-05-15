@@ -77,6 +77,7 @@ class EmacsPlusAT30 < EmacsBase
   local_patch "round-undecorated-frame", sha: "7451f80f559840e54e6a052e55d1100778abc55f98f1d0c038a24e25773f2874"
   local_patch "fix-macos-tahoe-scrolling", sha: "847a38346c5d917c83ba8c28d63c85006e51e2c0e08c2a2343b3ec9a3f40e380"
   local_patch "fix-ns-x-colors", sha: "9e5d3e26a8d388d3a000b697d582769645ca93ad597b4113744deba4b89a8b9e"
+  local_patch "glow-face-attribute", sha: "fd984a0defa2c398bb121ab7e5c35e6d954d720e2a60c5b100130ae4fa83ec89"
 
   #
   # Install
