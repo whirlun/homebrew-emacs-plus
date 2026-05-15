@@ -1,0 +1,24 @@
+Formula/emacs-plus@30.rb
+  s_887f8065214a26::t_fc54f791b66f22 80
+patches/emacs-30/glow-face-attribute.patch
+  s_887f8065214a26::t_fa5a2339e9c5f0 49,53,55-58,63-65,67-92,94,97-98,279-281,283-306
+  s_887f8065214a26::t_54f2d30463a17a 1-13,15-24,26-38,42-45,47-48,50-52,59-62,93,95-96,99-102,104-136,138-169,175-194,196-203,205-214,216-222,224-237,240-250,252-257,259-265,267-274,276-278
+  s_887f8065214a26::t_a995b9eb869abe 14,25,39-41,46,66,103,137,170-174,195,204,215,223,238-239,251,258,266,275
+  s_887f8065214a26::t_8afe4ccbfc6f5b 282
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "0cf0916423fb4faed279f0ed21463db27a99c4b6",
+  "prompts": {},
+  "sessions": {
+    "s_887f8065214a26": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "004877dd-c804-42c7-890f-00c85bf44559",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Bolan Chen <bolan.chen@unit21.ai>"
+    }
+  }
+}
